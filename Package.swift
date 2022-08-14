@@ -13,6 +13,6 @@ let package = Package(
   dependencies: [
   ],
   targets: [
-    .binaryTarget(name: "NMapsMap", path: "NMapsMap.xcframework")
+    .binaryTarget(name: "NMapsMap", path: "framework/NMapsMap.xcframework")
   ]
 )

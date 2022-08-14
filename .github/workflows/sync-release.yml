@@ -1,0 +1,83 @@
+name: Sync NMapsMap Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync_release:
+    name: Sync NMapsMap Release
+    runs-on: macos-latest
+    steps:
+      - name: Fetch recent release on NMapsMap
+        id: nmaps_release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            var releases = (await github.rest.repos.listReleases({
+              owner: 'navermaps',
+              repo: 'NMapsMap'
+            })).data;
+
+            releases = releases.filter(x => x.prerelease != true);
+            releases = releases.filter(x => x.draft != true);
+
+            core.setOutput("release", releases[0].tag_name);
+            console.log("release: ", releases[0].tag_name);
+      
+      - name: Fetch recent release on ${{ github.repository }}
+        id: current_release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            var releases = (await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })).data;
+
+            releases = releases.filter(x => x.prerelease != true);
+            releases = releases.filter(x => x.draft != true);
+
+            if (releases.length) {
+              core.setOutput("release", releases[0].tag_name);
+              console.log("release: ", releases[0].tag_name);
+            } else {
+              core.setOutput("release", "none");
+              console.log("No release found");
+            }
+      
+      - name: Diff releases between ${{ github.repository }} and NMapsMap
+        id: diff_releases
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const shouldSync = ${{ steps.nmaps_release.outputs.release != steps.current_release.outputs.release }};
+
+            core.setOutput("shouldSync", shouldSync);
+            console.log("shouldSync: ", shouldSync);
+
+      - uses: actions/checkout@v2
+        if: ${{ steps.diff_releases.outputs.shouldSync }}
+
+      - name: Sync ${{ github.repository }} with NMapsMap
+        if: ${{ steps.diff_releases.outputs.shouldSync }}
+        run: |
+          tag_name=`python3 -c "import urllib.parse; print(urllib.parse.quote(input(), safe=''))" <<< ${{ steps.nmaps_release.outputs.release }}`
+          curl -L https://github.com/navermaps/NMapsMap/releases/download/${tag_name}/NMapsMap.framework.zip -o NMapsMap.framework.zip
+          unzip NMapsMap.framework.zip -d result
+          mv result/framework framework
+          rm -rf result
+          rm NMapsMap.framework.zip
+
+      - name: Create Pull Request
+        if: ${{ steps.diff_releases.outputs.shouldSync }}
+        uses: peter-evans/create-pull-request@v3
+        with:
+          commit-message: update xcframework
+          committer: OhKanghoon <ggaa96@naver.com>
+          author: OhKanghoon <ggaa96@naver.com>
+          title: Update xcframework version to ${{ steps.nmaps_release.outputs.release }}
+          body: update xcframework version to ${{ steps.nmaps_release.outputs.release }}
+          branch: ${{ steps.nmaps_release.outputs.release }}
+          assignees: OhKanghoon
+          reviewers: ${{ github.actor }}
+          labels: Update
